@@ -1,0 +1,14 @@
+{application, eaop,
+ [
+  {description, "An Erlang eAOP library"},
+  {vsn, "1"},
+  {modules, [
+    eaop
+            ]},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {env, []}
+ ]}.
