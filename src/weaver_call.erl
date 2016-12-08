@@ -31,10 +31,10 @@ filter([H | T], Type, Result) ->
 
 is_match([], _, _, _, _) -> false;
 is_match([Pointcut = #pointcut{event = call, module = Module, function = Function, arity = Arity, advices = _} | T], ModuleName, FunctionName, FunctionArity, Args) ->
-  ModuleCheck = (atom_to_list(ModuleName) == Module) or (Module == "_"),
-  FunctionCheck = (Function == atom_to_list(FunctionName)) or (Function == "_"),
+  ModuleCheck = util:regex_match(atom_to_list(ModuleName), Module) or (Module == "_"),
+  FunctionCheck = util:regex_match(atom_to_list(FunctionName),Function) or (Function == "_"),
   if is_atom(FunctionArity) == true ->
-    ArityCheck = (Arity == "*") or (atom_to_list(FunctionArity) == Arity),
+    ArityCheck = (Arity == "*") orelse util:regex_match(atom_to_list(FunctionArity), Arity),
     Check = ModuleCheck and FunctionCheck and ArityCheck,
     if Check == true ->
       {true, Pointcut};
@@ -42,7 +42,7 @@ is_match([Pointcut = #pointcut{event = call, module = Module, function = Functio
         is_match(T, ModuleName, FunctionName, FunctionArity, Args)
     end;
     is_integer(FunctionArity) == true ->
-      ArityCheck = (Arity == "*") or (integer_to_list(FunctionArity) == Arity),
+      ArityCheck = (Arity == "*") orelse util:regex_match(integer_to_list(FunctionArity), Arity),
       Check = ModuleCheck and FunctionCheck and ArityCheck,
       if Check == true ->
         {true, Pointcut};

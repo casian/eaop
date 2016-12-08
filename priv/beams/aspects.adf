@@ -1,7 +1,16 @@
 [
-    Pointcut(function, "server","start","0",[override]),
-    Pointcut(call, "server","spawn","*",[intercept]),
+    Pointcut(function, "serv[A-Za-z]*","sta[A-Za-z]*","0",[override]),
+    Pointcut(call, "serv[A-Za-z]*","spawn[_]?[A-Za-z]*","*",[intercept]),
     Pointcut('receive', "_","_","{_,_,_,_}",[before,'after',upon,intercept]),
     Pointcut(send, "_","_","{res,_}",[before,intercept]),
-    Pointcut(call, "server","hi","0",[before,'after',intercept])
+    Pointcut(call, "serv[A-Za-z]*","hi","0",[before,'after',intercept])
 ].
+
+
+%[
+%    Pointcut(function, "server","start","0",[override]),
+%    Pointcut(call, "server","spawn","*",[intercept]),
+%    Pointcut('receive', "_","_","{_,_,_,_}",[before,'after',upon,intercept]),
+%    Pointcut(send, "_","_","{res,_}",[before,intercept]),
+%    Pointcut(call, "server","hi","0",[before,'after',intercept])
+%].

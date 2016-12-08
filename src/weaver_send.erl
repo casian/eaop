@@ -21,11 +21,12 @@ filter([H | T], Type, Result) ->
     true -> filter(T, Type, Result)
   end.
 
+
 is_match([], _, _) -> false;
 is_match([H | T], ModuleName, FunctionName) ->
   #pointcut{event = _Event, module = Module, function = Function, arity = _Arity} = H,
-  ModuleCheck = (atom_to_list(ModuleName) == Module) or (Module == "_"),
-  FunctionCheck = (Function == atom_to_list(FunctionName)) or (Function == "_"),
+  ModuleCheck = util:regex_match(atom_to_list(ModuleName), Module) or (Module == "_"),
+  FunctionCheck = util:regex_match(atom_to_list(FunctionName),Function) or (Function == "_"),
   Check = ModuleCheck and FunctionCheck,
   if Check == true ->
     {true, H};

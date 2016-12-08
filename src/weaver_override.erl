@@ -35,8 +35,17 @@ process_forms_function([{attribute, _, module, ModuleName} = H | T], Defs, _, {E
 process_forms_function([{attribute, _, _, _} = H | T], Defs, ModuleName, {ExportedFuncs, NewForm}, InterceptedFunctions) ->
   process_forms_function(T, Defs, ModuleName, {ExportedFuncs, [H | NewForm]}, InterceptedFunctions);
 process_forms_function([{function, LineNum, FunctionName, NumArgs, Clause} = H | T], Defs, ModuleName, {ExportedFuncs, NewForm}, InterceptedFunctions) ->
-  case lists:any(fun(Def) ->
-    list_to_integer(string:strip(Def#pointcut.arity)) == NumArgs andalso FunctionName == list_to_atom(Def#pointcut.function) end, Defs) of
+  case lists:any(
+    fun(Def) ->
+      ModulePattern = string:strip(Def#pointcut.module),
+      ModuleCheck =  util:regex_match(atom_to_list(ModuleName),ModulePattern) orelse (ModulePattern == "_"),
+      ArityPattern = string:strip(Def#pointcut.arity),
+      ArityCheck = (ArityPattern == "*") orelse util:regex_match(integer_to_list(NumArgs), ArityPattern),
+      FunctionPattern = string:strip(Def#pointcut.function),
+      FunctionCheck = util:regex_match(atom_to_list(FunctionName),FunctionPattern) orelse (FunctionPattern == "_"),
+      ModuleCheck andalso ArityCheck andalso FunctionCheck end, Defs
+    )
+  of
     true ->
       NewFunctionName = encode_intercepted_function_name(FunctionName),
       process_forms_function(T, Defs, ModuleName, {ExportedFuncs, [{function, LineNum, NewFunctionName, NumArgs, Clause} | NewForm]}, InterceptedFunctions ++ [{function, LineNum, FunctionName, NumArgs, Clause}]);
