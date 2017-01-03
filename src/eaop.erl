@@ -25,7 +25,7 @@
 %%	Config_dirs = list(string()) - list of directory names these contain configuration files.
 %% The function compiles a set of source files (*.erl) from source directories and applyes
 %% AOP weaving during compilation stage. Configuration files for AOP weaving are taken
-%% from configuration directories (*.adf)
+%% from configuration directories (*.eaop)
 %%
 instrument(Src_dirs, Config_dirs) ->
   instrument(Src_dirs, Config_dirs, []).
@@ -38,7 +38,7 @@ instrument(Src_dirs, Config_dirs) ->
 %%	Options = list() - Options determine the behavior of the compiler as defined in compile:file/2.
 %% The function compiles a set of source files (*.erl) from source directories and applyes
 %% AOP weaving during compilation stage. Configuration files for AOP weaving are taken
-%% from configuration directories (*.adf)
+%% from configuration directories (*.eaop)
 %%
 instrument([], _, _) -> ok;
 instrument(Code_dirs, Config_dirs, Options) ->
@@ -133,7 +133,7 @@ get_beam_files(Dirs, Result) ->
 %% config list.
 get_configurations([], Result) -> Result;
 get_configurations([Dir | Dirs], Result) ->
-  ADF_files = filelib:fold_files(Dir, ".*\.adf$", true, fun(F, Acc) -> [F | Acc] end, []),
+  ADF_files = filelib:fold_files(Dir, ".*\.eaop$", true, fun(F, Acc) -> [F | Acc] end, []),
   io:format("Config files  = ~p~n", [ADF_files]),
   get_configurations(Dirs, lists:append(read_adf(ADF_files), Result))
 .
