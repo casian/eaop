@@ -3,6 +3,6 @@
 	module = []::string(),
 	function = []::string(),
 	arity = 0::integer(),
-	advices = []::list()
+	advice_types = []::list()
 }).
 

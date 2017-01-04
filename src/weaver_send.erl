@@ -80,7 +80,7 @@ process_send(H = {op, Num, '!', {T1, Num, SendTo}, Msg}, Defs, FunctionName, Mod
     true ->
       case Match of
         {true, Pointcut} ->
-          AdviceTypes = Pointcut#pointcut.advices,
+          AdviceTypes = Pointcut#pointcut.advice_types,
           HasBefore = lists:any(fun(before) -> true; (_) -> false end, AdviceTypes),
           HasAfter = lists:any(fun('after') -> true; (_) -> false end, AdviceTypes),
           HasIntercept = lists:any(fun(intercept) -> true; (_) -> false end, AdviceTypes),
@@ -115,6 +115,19 @@ process_function_send([{'case', Num, A, Args} = _H | T], Defs, FunctionName, Mod
 process_function_send([{'receive', Num, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
   UpdatedArgs = process_function_send(Args, Defs, FunctionName, ModuleName, []),
   process_function_send(T, Defs, FunctionName, ModuleName, [{'receive', Num, UpdatedArgs} | NewForm]);
+
+process_function_send([{'receive', Num, Args,Op,Clause2} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
+  UpdatedArgs = process_function_send(Args, Defs, FunctionName, ModuleName, []),
+  process_function_send(T, Defs, FunctionName, ModuleName, [{'receive', Num, UpdatedArgs,Op,Clause2} | NewForm]);
+
+process_function_send([{match, Num2, R, {'receive', Num, Args}} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
+  UpdatedArgs = process_function_send(Args, Defs, FunctionName, ModuleName, []),
+  process_function_send(T, Defs, FunctionName, ModuleName, [{match, Num2, R, {'receive', Num, UpdatedArgs}} | NewForm]);
+
+process_function_send([{match, Num2, R, {'receive', Num, Args,Op,Clause2}} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
+  UpdatedArgs = process_function_send(Args, Defs, FunctionName, ModuleName, []),
+  process_function_send(T, Defs, FunctionName, ModuleName, [{match, Num2, R, {'receive', Num, UpdatedArgs,Op,Clause2}} | NewForm]);
+
 process_function_send([{clause, Num, D, E, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
   UpdatedArgs = process_function_send(Args, Defs, FunctionName, ModuleName, []),
   process_function_send(T, Defs, FunctionName, ModuleName, [{clause, Num, D, E, UpdatedArgs} | NewForm]);

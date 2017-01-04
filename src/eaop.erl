@@ -6,7 +6,7 @@
 %%
 -import(compile, []).
 -import(filelib, []).
--import(file,  []).
+-import(file, []).
 -import(lists, []).
 
 %%
@@ -54,20 +54,23 @@ instrument(Code_dirs, Config_dirs, Options) ->
   lists:foreach(fun(SrcFile) -> compile_src_file(SrcFile, Opts) end, Src_File_list).
 
 write_to_file(ModuleName, Bin, OutDir) ->
-  write_to_file(ModuleName, Bin, OutDir,"beam").
-write_to_file(ModuleName, Bin, OutDir,Ext) ->
-  FileName = io_lib:format("~s\\~p.~s", [OutDir, ModuleName,Ext]),
-  file:write_file(FileName,Bin,[write]).
+  write_to_file(ModuleName, Bin, OutDir, "beam").
+write_to_file(ModuleName, Bin, OutDir, Ext) ->
+  FileName = io_lib:format("~s\\~p.~s", [OutDir, ModuleName, Ext]),
+  file:write_file(FileName, Bin, [write]).
 
 compile_beam_file(BeamFile, Options) ->
-  [{outdir, OutDir}] = lists:filter(fun(Opt) -> case Opt of {outdir, _} -> true; _ -> false end end, Options),
+  OutDir = case lists:filter(fun(Opt) -> case Opt of {outdir, _} -> true; _ -> false end end, Options) of
+             [{outdir, Dir}] -> Dir;
+             [] -> {ok, Dir} = file:get_cwd(), Dir
+           end,
   {ok, {_, [{abstract_code, {_, AC}}]}} = beam_lib:chunks(BeamFile, [abstract_code]),
   case compile:forms(AC, Options) of
     {ok, ModuleName, Bin} ->
       write_to_file(ModuleName, Bin, OutDir),
       io:format("~n>> Module ~p was instrumented. ~n", [ModuleName]),
       {ok, ModuleName};
-    {ok, ModuleName, Bin,_Warnings} ->
+    {ok, ModuleName, Bin, _Warnings} ->
       write_to_file(ModuleName, Bin, OutDir),
       io:format("~n>> Module ~p was instrumented. ~n", [ModuleName]),
       {ok, ModuleName};
@@ -133,32 +136,32 @@ get_beam_files(Dirs, Result) ->
 %% config list.
 get_configurations([], Result) -> Result;
 get_configurations([Dir | Dirs], Result) ->
-  ADF_files = filelib:fold_files(Dir, ".*\.eaop$", true, fun(F, Acc) -> [F | Acc] end, []),
-  io:format("Config files  = ~p~n", [ADF_files]),
-  get_configurations(Dirs, lists:append(read_adf(ADF_files), Result))
+  EAOP_files = filelib:fold_files(Dir, ".*\.eaop$", true, fun(F, Acc) -> [F | Acc] end, []),
+  io:format("Config files  = ~p~n", [EAOP_files]),
+  get_configurations(Dirs, lists:append(read_eaop(EAOP_files), Result))
 .
 
-%% @spec read_adf(Files::list()) -> list(#aspect{})
+%% @spec read_eaop(Files::list()) -> list(#aspect{})
 %% @throws nothing
-%% @doc reads adf file and converts its content to Erlang term.
+%% @doc reads eaop file and converts its content to Erlang term.
 %%
-read_adf(Files) ->
+read_eaop(Files) ->
   Pc = {'Pointcut', fun(M, F, A, S, Adv) -> {pointcut, M, F, A, S, Adv} end},
   Bindings = [Pc],
-  read_adf(Files, Bindings, [])
+  read_eaop(Files, Bindings, [])
 .
 
-%% @spec read_adf(Files::list(), Bindings::list(), Result::list()) -> list(#aspect{})
+%% @spec read_eaop(Files::list(), Bindings::list(), Result::list()) -> list(#aspect{})
 %% @throws nothing
-%% @doc reads adf file and converts its content to Erlang term.
+%% @doc reads eaop file and converts its content to Erlang term.
 %%
-read_adf([], _, Result) -> Result;
-read_adf([File | Files], Bindings, Result) ->
+read_eaop([], _, Result) -> Result;
+read_eaop([File | Files], Bindings, Result) ->
   case file:script(File, Bindings) of
     {ok, S} ->
-      read_adf(Files, Bindings, lists:append(S, Result));
+      read_eaop(Files, Bindings, lists:append(S, Result));
     {error, Error} ->
-      io:format("Read adf error = ~p~n~p~n~p~n", [Error, File, Bindings]),
-      read_adf(Files, Bindings, Result)
+      io:format("Read eaop error = ~p~n~p~n~p~n", [Error, File, Bindings]),
+      read_eaop(Files, Bindings, Result)
   end
 .

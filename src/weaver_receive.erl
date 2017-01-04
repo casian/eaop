@@ -13,7 +13,7 @@
 
 handle_receive(Forms, Defs) ->
   Aspects = filter(Defs, 'receive', []),
-  NewForm = process_forms_receive(Forms, Aspects, [], []),
+  NewForm = process_forms_receive(0,Forms, Aspects, [], []),
   NewForm.
 
 filter([], _, Result) -> Result;
@@ -35,31 +35,31 @@ is_match([H | T], ModuleName, FunctionName) ->
       is_match(T, ModuleName, FunctionName)
   end.
 
-process_forms_receive([], _, _, NewForm) -> lists:reverse(NewForm);
-process_forms_receive([{attribute, _, module, ModuleName} = H | T], Defs, _, NewForm) ->
-  process_forms_receive(T, Defs, ModuleName, [H | NewForm]);
-process_forms_receive([{attribute, _, _, _} = H | T], Defs, ModuleName, NewForm) ->
-  process_forms_receive(T, Defs, ModuleName, [H | NewForm]);
-process_forms_receive([{function, LineNum, FunctionName, NumArgs, Clause} | T], Defs, ModuleName, NewForm) ->
+process_forms_receive(_,[], _, _, NewForm) -> lists:reverse(NewForm);
+process_forms_receive(Count,[{attribute, _, module, ModuleName} = H | T], Defs, _, NewForm) ->
+  process_forms_receive(Count,T, Defs, ModuleName, [H | NewForm]);
+process_forms_receive(Count,[{attribute, _, _, _} = H | T], Defs, ModuleName, NewForm) ->
+  process_forms_receive(Count,T, Defs, ModuleName, [H | NewForm]);
+process_forms_receive(Count,[{function, LineNum, FunctionName, NumArgs, Clause} | T], Defs, ModuleName, NewForm) ->
   if length(Clause) == 1 ->
     [{clause, LineNum, A, B, Contents}] = Clause,
-    Form = process_function_receive(Contents, Defs, FunctionName, ModuleName, []),
-    process_forms_receive(T, Defs, ModuleName, [{function, LineNum, FunctionName, NumArgs, [{clause, LineNum, A, B, Form}]} | NewForm]);
+    Form = process_function_receive(Count,Contents, Defs, FunctionName, ModuleName, []),
+    process_forms_receive(Count,T, Defs, ModuleName, [{function, LineNum, FunctionName, NumArgs, [{clause, LineNum, A, B, Form}]} | NewForm]);
     length(Clause) > 1 ->
-      NewClause = process_clauses_receive(Clause, Defs, FunctionName, ModuleName, []),
-      process_forms_receive(T, Defs, ModuleName, [{function, LineNum, FunctionName, NumArgs, NewClause} | NewForm]);
+      NewClause = process_clauses_receive(Count,Clause, Defs, FunctionName, ModuleName, []),
+      process_forms_receive(Count,T, Defs, ModuleName, [{function, LineNum, FunctionName, NumArgs, NewClause} | NewForm]);
     true -> {ok}
   end;
-process_forms_receive([{eof, C} | T], Defs, ModuleName, NewForm) ->
-  process_forms_receive(T, Defs, ModuleName, [{eof, C} | NewForm]);
-process_forms_receive([_ | T], Defs, ModuleName, NewForm) ->
-  process_forms_receive(T, Defs, ModuleName, NewForm).
+process_forms_receive(Count,[{eof, C} | T], Defs, ModuleName, NewForm) ->
+  process_forms_receive(Count,T, Defs, ModuleName, [{eof, C} | NewForm]);
+process_forms_receive(Count,[_ | T], Defs, ModuleName, NewForm) ->
+  process_forms_receive(Count,T, Defs, ModuleName, NewForm).
 
-process_clauses_receive([], _, _, _, NewClauses) -> lists:reverse(NewClauses);
-process_clauses_receive([Clause | T], Defs, FunctionName, ModuleName, NewClauses) ->
+process_clauses_receive(_,[], _, _, _, NewClauses) -> lists:reverse(NewClauses);
+process_clauses_receive(Count,[Clause | T], Defs, FunctionName, ModuleName, NewClauses) ->
   {clause, LineNum, A, B, Contents} = Clause,
-  NewClause = process_function_receive(Contents, Defs, FunctionName, ModuleName, []),
-  process_clauses_receive(T, Defs, FunctionName, ModuleName, [{clause, LineNum, A, B, NewClause} | NewClauses]).
+  NewClause = process_function_receive(Count,Contents, Defs, FunctionName, ModuleName, []),
+  process_clauses_receive(Count,T, Defs, FunctionName, ModuleName, [{clause, LineNum, A, B, NewClause} | NewClauses]).
 
 receive_matches([], _) -> false;
 receive_matches([{clause, _, Msg, _, _} | T], Defs) ->
@@ -69,7 +69,7 @@ receive_matches([{clause, _, Msg, _, _} | T], Defs) ->
     false -> receive_matches(T, Defs)
   end.
 
-process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName) ->
+process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName) ->
   Match = is_match(Defs, ModuleName, FunctionName),
   ValidReceive = receive_matches(Clauses, Defs),
   case Match of
@@ -78,7 +78,7 @@ process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionNam
         ReceiveBefore = {call, Num, {remote, Num, {atom, Num, advices}, {atom, Num, before_advice}}, [{atom, Num, 'receive'}, {call, Num, {atom, Num, self}, []}, {atom, Num, ModuleName}, {atom, Num, FunctionName}, {nil, Num}]},
         ReceiveContents = RecvWrapperFun(Num, process_contents_receive(Clauses, Defs, FunctionName, ModuleName, [])),
 
-        AdviceTypes = Pointcut#pointcut.advices,
+        AdviceTypes = Pointcut#pointcut.advice_types,
         HasBefore = lists:member(before, AdviceTypes),
         HasAfter = lists:member('after', AdviceTypes),
         HasIntercept = lists:member(intercept, AdviceTypes),
@@ -96,56 +96,58 @@ process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionNam
                true -> [MatchWrapperFun(Recv) | Rest]
              end,
 
+        RetVar = list_to_atom("RR"++integer_to_list(Count)),
+
         AL = if HasAfter == true ->
           [RL | T] = IL,
-          MRL = {match, Num, {var, Num, 'R'}, RL},
-          ReceiveAfter = {call, Num, {remote, Num, {atom, Num, advices}, {atom, Num, after_advice}}, [{atom, Num, 'receive'}, {call, Num, {atom, Num, self}, []}, {atom, Num, ModuleName}, {atom, Num, FunctionName}, {var, Num, 'R'}]},
+          MRL = {match, Num, {var, Num, RetVar}, RL},
+          ReceiveAfter = {call, Num, {remote, Num, {atom, Num, advices}, {atom, Num, after_advice}}, [{atom, Num, 'receive'}, {call, Num, {atom, Num, self}, []}, {atom, Num, ModuleName}, {atom, Num, FunctionName}, {var, Num, RetVar}]},
           lists:concat([[ReceiveAfter, MRL], T]);
                true -> IL
              end,
         AL;
         true ->
-          [RecvWrapperFun(Num, Clauses)]
+          [MatchWrapperFun(RecvWrapperFun(Num, Clauses))]
       end;
     false ->
-      [RecvWrapperFun(Num, Clauses)]
+      [MatchWrapperFun(RecvWrapperFun(Num, Clauses))]
   end.
 
-process_function_receive([], _, _, _, NewForm) -> lists:reverse(NewForm);
+process_function_receive(_,[], _, _, _, NewForm) -> lists:reverse(NewForm);
 
-process_function_receive([{match, Num2, R, {'receive', Num, Clauses}} | T], Defs, FunctionName, ModuleName, NewForm) ->
+process_function_receive(Count,[{match, Num2, R, {'receive', Num, Clauses}} | T], Defs, FunctionName, ModuleName, NewForm) ->
   MatchWrapperFun = fun(Recv) -> {match, Num2, R, Recv} end,
   RecvWrapperFun = fun(Num, Clauses) -> {'receive', Num, Clauses} end,
-  Res = process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
-  process_function_receive(T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
+  Res = process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
+  process_function_receive(Count+1,T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
 
-process_function_receive([{match, Num2, R, {'receive', Num, Clauses, OP, Clauses2}} | T], Defs, FunctionName, ModuleName, NewForm) ->
+process_function_receive(Count,[{match, Num2, R, {'receive', Num, Clauses, OP, Clauses2}} | T], Defs, FunctionName, ModuleName, NewForm) ->
   MatchWrapperFun = fun(Recv) -> {match, Num2, R, Recv} end,
   RecvWrapperFun = fun(Num, Clauses) -> {'receive', Num, Clauses, OP, Clauses2} end,
-  Res = process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
-  process_function_receive(T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
+  Res = process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
+  process_function_receive(Count+1,T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
 
-process_function_receive([{'receive', Num, Clauses} | T], Defs, FunctionName, ModuleName, NewForm) ->
+process_function_receive(Count,[{'receive', Num, Clauses} | T], Defs, FunctionName, ModuleName, NewForm) ->
   MatchWrapperFun = fun(Recv) -> Recv end,
   RecvWrapperFun = fun(Num, Clauses) -> {'receive', Num, Clauses} end,
-  Res = process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
-  process_function_receive(T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
+  Res = process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
+  process_function_receive(Count+1,T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
 
-process_function_receive([{'receive', Num, Clauses, OP, Clauses2} | T], Defs, FunctionName, ModuleName, NewForm) ->
+process_function_receive(Count,[{'receive', Num, Clauses, OP, Clauses2} | T], Defs, FunctionName, ModuleName, NewForm) ->
   MatchWrapperFun = fun(Recv) -> Recv end,
   RecvWrapperFun = fun(Num, Clauses) -> {'receive', Num, Clauses, OP, Clauses2} end,
-  Res = process_receive(RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
-  process_function_receive(T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
+  Res = process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
+  process_function_receive(Count+1,T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
 
 
-process_function_receive([{'case', Num, A, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  UpdatedArgs = process_function_receive(Args, Defs, FunctionName, ModuleName, []),
-  process_function_receive(T, Defs, FunctionName, ModuleName, [{'case', Num, A, UpdatedArgs} | NewForm]);
-process_function_receive([{'if', Num, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  UpdatedArgs = process_function_receive(Args, Defs, FunctionName, ModuleName, []),
-  process_function_receive(T, Defs, FunctionName, ModuleName, [{'if', Num, UpdatedArgs} | NewForm]);
-process_function_receive([H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  process_function_receive(T, Defs, FunctionName, ModuleName, [H | NewForm]).
+process_function_receive(Count,[{'case', Num, A, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
+  UpdatedArgs = process_function_receive(Count,Args, Defs, FunctionName, ModuleName, []),
+  process_function_receive(Count,T, Defs, FunctionName, ModuleName, [{'case', Num, A, UpdatedArgs} | NewForm]);
+process_function_receive(Count,[{'if', Num, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
+  UpdatedArgs = process_function_receive(Count,Args, Defs, FunctionName, ModuleName, []),
+  process_function_receive(Count,T, Defs, FunctionName, ModuleName, [{'if', Num, UpdatedArgs} | NewForm]);
+process_function_receive(Count,[H | T], Defs, FunctionName, ModuleName, NewForm) ->
+  process_function_receive(Count,T, Defs, FunctionName, ModuleName, [H | NewForm]).
 
 
 str_pattern_match(PointCutPattern, Pattern) ->

@@ -5,7 +5,8 @@ before_advice(Type, Pid, Module, Function, Payload) ->
   io:format("~nBEFORE: {~p,~p,~p,~p,~p}", [Type, Pid, Module, Function, Payload]).
 
 after_advice(Type, Pid, Module, Function, Payload) ->
-  io:format("~nAFTER: {~p,~p,~p,~p,~p}", [Type, Pid, Module, Function, Payload]).
+  io:format("~nAFTER: {~p,~p,~p,~p,~p}", [Type, Pid, Module, Function, Payload]),
+  lists:last(lists:last(Payload)).
 
 override_advice(Type, Pid, Module, Function, Payload) ->
   io:format("~nOVERRIDE: {~p,~p,~p,~p,~p}", [Type, Pid, Module, Function, Payload]),

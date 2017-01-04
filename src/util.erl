@@ -10,7 +10,7 @@
 -author("Ian Cassar").
 
 %% API
--export([regex_match/2]).
+-export([regex_match/2,format/1,format/2]).
 
 regex_match(Subject, RE) ->
   IsMatch = re:run(Subject, RE),
@@ -18,3 +18,8 @@ regex_match(Subject, RE) ->
     nomatch -> false;
     {match, _} -> true
   end.
+
+format(String) ->
+  String.
+format(String, Params) ->
+  lists:flatten(io_lib:format(String, Params)).
