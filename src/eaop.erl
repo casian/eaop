@@ -51,7 +51,9 @@ instrument(Code_dirs, Config_dirs, Options) ->
     Options
   ),
   lists:foreach(fun(BeamFile) -> compile_beam_file(BeamFile, Opts) end, Beam_File_list),
-  lists:foreach(fun(SrcFile) -> compile_src_file(SrcFile, Opts) end, Src_File_list).
+  lists:foreach(fun(SrcFile) -> compile_src_file(SrcFile, Opts) end, Src_File_list),
+  print_advice_template(Options),
+  compile_advices(Options).
 
 write_to_file(ModuleName, Bin, OutDir) ->
   write_to_file(ModuleName, Bin, OutDir, "beam").
@@ -103,7 +105,9 @@ instrument_srcs(File_list, Config_dirs, Options) ->
     [{parse_transform, weaver}, return, report, {aop_config, Config}],
     Options
   ),
-  lists:foreach(fun(SrcFile) -> compile_src_file(SrcFile, Opts) end, File_list).
+  lists:foreach(fun(SrcFile) -> compile_src_file(SrcFile, Opts) end, File_list),
+  print_advice_template(Options),
+  compile_advices(Options).
 
 
 instrument_beams([], _, _) -> ok;
@@ -114,7 +118,9 @@ instrument_beams(File_list, Config_dirs, Options) ->
     [{parse_transform, weaver}, return, report, {aop_config, Config}],
     Options
   ),
-  lists:foreach(fun(BeamFile) -> compile_beam_file(BeamFile, Opts) end, File_list).
+  lists:foreach(fun(BeamFile) -> compile_beam_file(BeamFile, Opts) end, File_list),
+  print_advice_template(Options),
+  compile_advices(Options).
 
 
 get_files(_, [], Result) -> Result;
@@ -163,5 +169,33 @@ read_eaop([File | Files], Bindings, Result) ->
     {error, Error} ->
       io:format("Read eaop error = ~p~n~p~n~p~n", [Error, File, Bindings]),
       read_eaop(Files, Bindings, Result)
-  end
-.
+  end.
+
+get_outdir(Options) ->
+  case lists:filter(fun(Opt) -> case Opt of {outdir, _} -> true; _ -> false end end, Options) of
+    [{outdir, Dir}] -> Dir ++ "\\";
+    [] -> {ok, Dir} = file:get_cwd(), Dir ++ "\\"
+  end.
+
+print_advice_template(Options) ->
+  case lists:member(gen_advice_template, Options) of
+    true -> OutDir = get_outdir(Options),
+      TemplateAdvice = "-module(advices). \n-author(\"Ian Cassar\"). \n-compile(export_all).
+      \nbefore_advice(Type, Pid, Module, Function, Payload) -> \n\t io:format(\"~nBEFORE: {~p,~p,~p,~p,~p}\", [Type, Pid, Module, Function, Payload]).
+      \nafter_advice(Type, Pid, Module, Function, Payload) -> \n\t io:format(\"~nAFTER: {~p,~p,~p,~p,~p}\", [Type, Pid, Module, Function, Payload]).
+      \noverride_advice(Type, Pid, Module, Function, Payload) -> \n\t io:format(\"~nOVERRIDE: {~p,~p,~p,~p,~p}\", [Type, Pid, Module, Function, Payload]).
+      \nintercept_advice(Type, Pid, Module, Function, Payload) -> \n\t io:format(\"~nINTERCEPT: {~p,~p,~p,~p,~p}\", [Type, Pid, Module, Function, Payload]).
+      \nupon_advice(Type, Pid, Module, Function, Payload) -> \n\t io:format(\"~nUPON: {~p,~p,~p,~p,~p}\", [Type, Pid, Module, Function, Payload]).",
+      case file:write_file(OutDir ++ "\\advices.erl", TemplateAdvice, [exclusive]) of
+        {error, eexist} -> io:format("~nwarning -- advices.erl already exists.");
+        _ -> ok
+      end;
+    false -> ok
+  end.
+
+compile_advices(Options) ->
+  case lists:member(compile_advices, Options) of
+    true -> OutDir = get_outdir(Options),
+      compile:file(OutDir ++ "\\advices.erl", Options);
+    false -> ok
+  end.
