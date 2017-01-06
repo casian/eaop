@@ -39,8 +39,8 @@ process_forms_function([{function, LineNum, FunctionName, NumArgs, Clause} = H |
     fun(Def) ->
       ModulePattern = string:strip(Def#pointcut.module),
       ModuleCheck =  util:regex_match(atom_to_list(ModuleName),ModulePattern) orelse (ModulePattern == "_"),
-      ArityPattern = string:strip(Def#pointcut.arity),
-      ArityCheck = (ArityPattern == "*") orelse util:regex_match(integer_to_list(NumArgs), ArityPattern),
+      ArityPattern = string:strip(Def#pointcut.payload),
+      ArityCheck = (ArityPattern == "_") orelse util:regex_match(integer_to_list(NumArgs), ArityPattern),
       FunctionPattern = string:strip(Def#pointcut.function),
       FunctionCheck = util:regex_match(atom_to_list(FunctionName),FunctionPattern) orelse (FunctionPattern == "_"),
       ModuleCheck andalso ArityCheck andalso FunctionCheck end, Defs

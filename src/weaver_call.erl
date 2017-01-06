@@ -30,24 +30,28 @@ filter([H | T], Type, Result) ->
   end.
 
 is_match([], _, _, _, _) -> false;
-is_match([Pointcut = #pointcut{event = call, module = Module, function = Function, arity = Arity, advice_types = _} | T], ModuleName, FunctionName, FunctionArity, Args) ->
-  ModuleCheck = util:regex_match(atom_to_list(ModuleName), Module) or (Module == "_"),
-  FunctionCheck = util:regex_match(atom_to_list(FunctionName), Function) or (Function == "_"),
-  if is_atom(FunctionArity) == true ->
-    ArityCheck = (Arity == "*") orelse util:regex_match(atom_to_list(FunctionArity), Arity),
-    Check = ModuleCheck and FunctionCheck and ArityCheck,
+is_match([Pointcut = #pointcut{event = call, module = CallingModulePtrn, function = CallingFunctionPtrn, payload = [ModulePtrn, FunctionPtrn, ArityPtrn], advice_types = _} | T],
+    CallingModuleName, CallingFunctionName, [ModuleName,FunctionName,Arity], Args) ->
+  CallingModuleCheck = util:regex_match(atom_to_list(CallingModuleName), CallingModulePtrn) or (CallingModulePtrn == "_"),
+  CallingFunctionCheck = util:regex_match(atom_to_list(CallingFunctionName), CallingFunctionPtrn) or (CallingFunctionPtrn == "_"),
+  ModuleCheck = util:regex_match(atom_to_list(ModuleName), ModulePtrn) or (ModulePtrn == "_"),
+  FunctionCheck = util:regex_match(atom_to_list(FunctionName), FunctionPtrn) or (FunctionPtrn == "_"),
+
+  if is_atom(Arity) == true ->
+    ArityCheck = (ArityPtrn == "_") orelse util:regex_match(atom_to_list(Arity), ArityPtrn),
+    Check = CallingModuleCheck and CallingFunctionCheck and ModuleCheck and FunctionCheck and ArityCheck,
     if Check == true ->
       {true, Pointcut};
       true ->
-        is_match(T, ModuleName, FunctionName, FunctionArity, Args)
+        is_match(T, CallingModuleName, CallingFunctionName, [ModuleName,FunctionName,Arity], Args)
     end;
-    is_integer(FunctionArity) == true ->
-      ArityCheck = (Arity == "*") orelse util:regex_match(integer_to_list(FunctionArity), Arity),
-      Check = ModuleCheck and FunctionCheck and ArityCheck,
+    is_integer(Arity) == true ->
+      ArityCheck = (ArityPtrn == "_") orelse util:regex_match(integer_to_list(Arity), ArityPtrn),
+      Check = CallingModuleCheck and CallingFunctionCheck and ModuleCheck and FunctionCheck  and ArityCheck,
       if Check == true ->
         {true, Pointcut};
         true ->
-          is_match(T, ModuleName, FunctionName, FunctionArity, Args)
+          is_match(T, CallingModuleName, CallingFunctionName, [ModuleName,FunctionName,Arity], Args)
       end
   end.
 
@@ -110,67 +114,61 @@ process_clauses_call(Count, [Clause | T], Defs, FunctionName, ModuleName, NewCla
   process_clauses_call(Count, T, Defs, FunctionName, ModuleName, [{clause, LineNum, A, B, NewClause} | NewClauses]).
 
 process_function_call(_, [], _, _, _, NewForm) -> [lists:reverse(NewForm)];
-process_function_call(Count, [{call, Num, {atom, Num, FunctionCalled}, Args} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+process_function_call(Count, [{call, Num, {atom, Num, FunctionCalled}, Args} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Check = lists:member(FunctionCalled, ?BIFS),
+  ModuleCalled = if Check == true -> 'erlang';   true -> CallingModuleName  end,
+
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      Check = lists:member(FunctionCalled, ?BIFS),
-      if Check == true ->
-        NewArgs = [ModuleName, FunctionName, 'erlang', FunctionCalled, UpdatedArgs],
+        NewArgs = [CallingFunctionName, CallingModuleName, ModuleCalled, FunctionCalled, UpdatedArgs],
         CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-        process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
-        true ->
-          NewArgs = [ModuleName, FunctionName, ModuleName, FunctionCalled, UpdatedArgs],
-          CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-          process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]))
-      end;
+        process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {call, Num, {atom, Num, FunctionCalled}, UpdatedArgs},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
-process_function_call(Count, [{call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+process_function_call(Count, [{call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+   Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      NewArgs = [ModuleName, FunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      NewArgs = [CallingModuleName, CallingFunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
       CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-      process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
-process_function_call(Count, [{match, Num, A, {call, Num, {atom, Num, FunctionCalled}, Args}} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+
+process_function_call(Count, [{match, Num, A, {call, Num, {atom, Num, FunctionCalled}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Check = lists:member(FunctionCalled, ?BIFS),
+  ModuleCalled = if Check == true -> 'erlang';   true -> CallingModuleName  end,
+
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      Check = lists:member(FunctionCalled, ?BIFS),
-      if Check == true ->
-        NewArgs = [ModuleName, FunctionName, ModuleName, FunctionCalled, UpdatedArgs],
-        CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-        process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
-        true ->
-          NewArgs = [ModuleName, FunctionName, ModuleName, FunctionCalled, UpdatedArgs],
-          CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-          process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]))
-      end;
+      NewArgs = [CallingFunctionName, CallingModuleName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {match, Num, A, {call, Num, {atom, Num, FunctionCalled}, UpdatedArgs}},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
-process_function_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args}} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+
+process_function_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      NewArgs = [ModuleName, FunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      NewArgs = [CallingModuleName, CallingFunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
       CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-      process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs}},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]))
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]))
   end;
 
 process_function_call(Count, [{match, Num2, R, {'receive', Num, Clauses}} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
@@ -214,67 +212,59 @@ process_if_call(Count, [H | T], Defs, FunctionName, ModuleName, NewForm) ->
 
 
 process_arguments_call(_, [], _, _, _, NewForm) -> [lists:reverse(NewForm)];
-process_arguments_call(Count, [{call, Num, {atom, Num, FunctionCalled}, Args} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+process_arguments_call(Count, [{call, Num, {atom, Num, FunctionCalled}, Args} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Check = lists:member(FunctionCalled, ?BIFS),
+  ModuleCalled = if Check == true -> 'erlang';   true -> CallingModuleName  end,
+
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      Check = lists:member(FunctionCalled, ?BIFS),
-      if Check == true ->
-        NewArgs = [ModuleName, FunctionName, 'erlang', FunctionCalled, UpdatedArgs],
-        CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-        process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
-        true ->
-          NewArgs = [ModuleName, FunctionName, ModuleName, FunctionCalled, UpdatedArgs],
-          CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-          process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]))
-      end;
+      NewArgs = [CallingFunctionName, CallingModuleName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {call, Num, {atom, Num, FunctionCalled}, UpdatedArgs},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
-process_arguments_call(Count, [{call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+process_arguments_call(Count, [{call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      NewArgs = [ModuleName, FunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      NewArgs = [CallingModuleName, CallingFunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
       CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-      process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs},
-      process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
-process_arguments_call(Count, [{match, Num, A, {call, Num, {atom, Num, FunctionCalled}, Args}} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+process_arguments_call(Count, [{match, Num, A, {call, Num, {atom, Num, FunctionCalled}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Check = lists:member(FunctionCalled, ?BIFS),
+  ModuleCalled = if Check == true -> 'erlang';   true -> CallingModuleName  end,
+
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      Check = lists:member(FunctionCalled, ?BIFS),
-      if Check == true ->
-        NewArgs = [ModuleName, FunctionName, ModuleName, FunctionCalled, UpdatedArgs],
-        CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-        process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
-        true ->
-          NewArgs = [ModuleName, FunctionName, ModuleName, FunctionCalled, UpdatedArgs],
-          CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-          process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
-      end;
+      NewArgs = [CallingFunctionName, CallingModuleName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {match, Num, A, {call, Num, {atom, Num, FunctionCalled}, UpdatedArgs}},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
-process_arguments_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args}} = H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, FunctionName, ModuleName, []),
-  Match = is_match(Defs, ModuleName, FunctionCalled, length(Args), Args),
+process_arguments_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+  [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
+  Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
     {true, Pointcut} ->
-      NewArgs = [ModuleName, FunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
+      NewArgs = [CallingModuleName, CallingFunctionName, ModuleCalled, FunctionCalled, UpdatedArgs],
       CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-      process_function_call(Count + 1, T, Defs, FunctionName, ModuleName, lists:concat([CallUpdated, NewForm]));
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs}},
-      process_function_call(Count, T, Defs, FunctionName, ModuleName, [CallUpdated | NewForm])
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
 process_arguments_call(Count, [{'case', Num, A, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
   [UpdatedArgs] = process_case_call(Count, Args, Defs, FunctionName, ModuleName, []),

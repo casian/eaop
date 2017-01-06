@@ -44,7 +44,7 @@ parse_transform(Forms, Options) ->
     print_src_files(ModuleName, NewInitForm, Options),
     NewInitForm
   catch
-    error:Error -> io:format("Exception = ~p StackTrace: ~p ~n", [Error, erlang:get_stacktrace()]),
+    error:Error -> util:print_error("~p StackTrace: ~p ~n", [Error, erlang:get_stacktrace()],Options),
       Forms
   end.
 

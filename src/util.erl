@@ -10,7 +10,7 @@
 -author("Ian Cassar").
 
 %% API
--export([regex_match/2,format/1,format/2]).
+-export([regex_match/2,format/1,format/2,print_error/3,print_msg/3,print_warning/3]).
 
 regex_match(Subject, RE) ->
   IsMatch = re:run(Subject, RE),
@@ -23,3 +23,12 @@ format(String) ->
   String.
 format(String, Params) ->
   lists:flatten(io_lib:format(String, Params)).
+
+print_error(Format,Args,Options) ->
+  io:format("ERROR: "++Format++"~n",Args).
+
+print_warning(Format,Args,Options) ->
+  io:format("WARNING: "++Format++"~n",Args).
+
+print_msg(Format,Args,Options) ->
+  io:format(Format,Args).

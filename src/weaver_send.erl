@@ -24,7 +24,7 @@ filter([H | T], Type, Result) ->
 
 is_match([], _, _) -> false;
 is_match([H | T], ModuleName, FunctionName) ->
-  #pointcut{event = _Event, module = Module, function = Function, arity = _Arity} = H,
+  #pointcut{event = _Event, module = Module, function = Function, payload = _Arity} = H,
   ModuleCheck = util:regex_match(atom_to_list(ModuleName), Module) or (Module == "_"),
   FunctionCheck = util:regex_match(atom_to_list(FunctionName),Function) or (Function == "_"),
   Check = ModuleCheck and FunctionCheck,
@@ -76,7 +76,7 @@ str_pattern_match(PointCutPattern, Pattern) ->
 process_send(H = {op, Num, '!', {T1, Num, SendTo}, Msg}, Defs, FunctionName, ModuleName) ->
   Match = is_match(Defs, ModuleName, FunctionName),
   PointCutPattern = weaver:msg_to_string(Msg),
-  case lists:any(fun(Def) -> Pattern = Def#pointcut.arity, str_pattern_match(PointCutPattern, Pattern) end, Defs) of
+  case lists:any(fun(Def) -> Pattern = Def#pointcut.payload, str_pattern_match(PointCutPattern, Pattern) end, Defs) of
     true ->
       case Match of
         {true, Pointcut} ->

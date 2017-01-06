@@ -1,8 +1,8 @@
 -record(pointcut, {
 	event = call::spawn|register|link|unlink|unregister|send|'receive'|call,
-	module = []::string(),
-	function = []::string(),
-	arity = 0::integer(),
-	advice_types = []::list()
+	module = null::string(),
+	function = null::string(),
+	payload = null::list(),
+	advice_types = null::list()
 }).
 
