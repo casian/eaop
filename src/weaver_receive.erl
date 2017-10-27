@@ -26,8 +26,8 @@ filter([H | T], Type, Result) ->
 is_match([], _, _) -> false;
 is_match([H | T], ModuleName, FunctionName) ->
   #pointcut{event = _Event, module = Module, function = Function, payload = _Arity} = H,
-  ModuleCheck = util:regex_match(atom_to_list(ModuleName), Module) or (Module == "_"),
-  FunctionCheck = util:regex_match(atom_to_list(FunctionName),Function) or (Function == "_"),
+  ModuleCheck = util:regex_match(atom_to_list(ModuleName), Module) orelse (Module == "_"),
+  FunctionCheck = util:regex_match(atom_to_list(FunctionName),Function) orelse (Function == "_"),
   Check = ModuleCheck and FunctionCheck,
   if Check == true ->
     {true, H};
@@ -63,8 +63,13 @@ process_clauses_receive(Count,[Clause | T], Defs, FunctionName, ModuleName, NewC
 
 receive_matches([], _) -> false;
 receive_matches([{clause, _, Msg, _, _} | T], Defs) ->
+  CleanedMsg =
+    case Msg of
+      [{match,_,_,Tuple}] -> [Tuple];
+      _ -> Msg
+    end,
   case lists:any(fun(Def) -> Pattern = Def#pointcut.payload,
-    str_pattern_match(Pattern, weaver:msg_to_string(Msg)) end, Defs) of
+    str_pattern_match(Pattern, weaver:msg_to_string(CleanedMsg)) end, Defs) of
     true -> true;
     false -> receive_matches(T, Defs)
   end.
