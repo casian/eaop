@@ -160,9 +160,13 @@ str_pattern_match(PointCutPattern, Pattern) ->
 
 process_contents_receive([], _, _, _, NewForm) -> lists:reverse(NewForm);
 process_contents_receive([{clause, Num, Msg, A, Contents} | T], Defs, FunctionName, ModuleName, NewForm) ->
-  [InnerMsg] = Msg,
+  InnerMsg =
+    case Msg of
+      [{match,_,_,Tuple}] -> Tuple;
+      [Tuple] -> Tuple
+    end,
   case lists:any(fun(Def) -> Pattern = Def#pointcut.payload,
-    str_pattern_match(Pattern, weaver:msg_to_string(Msg)) end, Defs) of
+    str_pattern_match(Pattern, weaver:msg_to_string([InnerMsg])) end, Defs) of
     %%case true of
     true ->
       if erlang:element(3, InnerMsg) == '_' ->
