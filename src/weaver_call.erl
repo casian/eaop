@@ -74,7 +74,7 @@ instrument_call(Count, MatchedCall, AdviceTypes, Num, [ModuleName, FunctionName,
   Before = {call, Num, {remote, Num, {atom, Num, advices}, {atom, Num, before_advice}}, ArgsSyntax},
   Intercept = {call, Num, {remote, Num, {atom, Num, advices}, {atom, Num, intercept_advice}}, ArgsSyntax},
 
-  RetVar = list_to_atom("RC" ++ integer_to_list(Count)),
+  RetVar = list_to_atom("_RC" ++ integer_to_list(Count)),
 
   AfterArgsSyntax = instrument_args(Num, [ModuleName, FunctionName, ModuleCalled, FunctionCalled, ArgsList], {var, Num, RetVar}),
   After = {call, Num, {remote, Num, {atom, Num, advices}, {atom, Num, after_advice}}, AfterArgsSyntax},
@@ -151,14 +151,15 @@ process_function_call(Count, [{match, Num, A, {call, Num, {atom, Num, FunctionCa
   case Match of
     {true, Pointcut} ->
       NewArgs = [CallingFunctionName, CallingModuleName, ModuleCalled, FunctionCalled, UpdatedArgs],
-      CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
-      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
+      [InstrHead|CallUpdated] = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
+      NewHead = {match, Num, A, InstrHead},
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([[NewHead|CallUpdated], NewForm]));
     false ->
       CallUpdated = {match, Num, A, {call, Num, {atom, Num, FunctionCalled}, UpdatedArgs}},
       process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
   end;
 
-process_function_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
+process_function_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, [NewForm]) ->
   [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
   Match = is_match(Defs, CallingModuleName, CallingFunctionName, [ModuleCalled, FunctionCalled,length(Args)], Args),
   case Match of
@@ -168,7 +169,7 @@ process_function_call(Count, [{match, Num, A, {call, Num, {remote, Num, {atom, N
       process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
       CallUpdated = {match, Num, A, {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs}},
-      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]))
+      process_function_call(Count, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated, NewForm])
   end;
 
 process_function_call(Count, [{match, Num2, R, {'receive', Num, Clauses}} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
@@ -211,7 +212,8 @@ process_if_call(Count, [H | T], Defs, FunctionName, ModuleName, NewForm) ->
   process_if_call(Count, T, Defs, FunctionName, ModuleName, [{clause, A, B, C, UpdatedArgs} | NewForm]).
 
 
-process_arguments_call(_, [], _, _, _, NewForm) -> [lists:reverse(NewForm)];
+process_arguments_call(_, [], _, _, _, NewForm) ->
+  [lists:reverse(NewForm)];
 process_arguments_call(Count, [{call, Num, {atom, Num, FunctionCalled}, Args} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
   [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
   Check = lists:member(FunctionCalled, ?BIFS),
@@ -236,8 +238,8 @@ process_arguments_call(Count, [{call, Num, {remote, Num, {atom, Num, ModuleCalle
       CallUpdated = instrument_call(Count, H, Pointcut#pointcut.advice_types, Num, NewArgs),
       process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, lists:concat([CallUpdated, NewForm]));
     false ->
-      CallUpdated = {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs},
-      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdated | NewForm])
+      CallUpdatedA = {call, Num, {remote, Num, {atom, Num, ModuleCalled}, {atom, Num, FunctionCalled}}, UpdatedArgs},
+      process_function_call(Count + 1, T, Defs, CallingFunctionName, CallingModuleName, [CallUpdatedA | NewForm])
   end;
 process_arguments_call(Count, [{match, Num, A, {call, Num, {atom, Num, FunctionCalled}, Args}} = H | T], Defs, CallingFunctionName, CallingModuleName, NewForm) ->
   [UpdatedArgs] = process_arguments_call(Count, Args, Defs, CallingFunctionName, CallingModuleName, []),
