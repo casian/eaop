@@ -19,7 +19,7 @@ hi() -> ok.
 
 math_loop() ->
   Y = receive
-    {add, Pid, N1, N2} ->
+    MSG = {add, Pid, N1, N2} ->
       hi(),
       X = Pid ! {res, N1 + N2},
       io:format("X:~p",[X]);

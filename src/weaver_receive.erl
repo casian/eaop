@@ -112,13 +112,15 @@ process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, Funct
              end,
         AL;
         true ->
-          [MatchWrapperFun(RecvWrapperFun(Num, Clauses))]
+          NewClauses = process_clauses_receive(Count,Clauses, Defs, FunctionName, ModuleName, []),
+          [MatchWrapperFun(RecvWrapperFun(Num, NewClauses))]
       end;
     false ->
       [MatchWrapperFun(RecvWrapperFun(Num, Clauses))]
   end.
 
-process_function_receive(_,[], _, _, _, NewForm) -> lists:reverse(NewForm);
+process_function_receive(_Count,[], _Defs, _FunctionName, _ModuleName, NewForm) ->
+  lists:reverse(NewForm);
 
 process_function_receive(Count,[{match, Num2, R, {'receive', Num, Clauses}} | T], Defs, FunctionName, ModuleName, NewForm) ->
   MatchWrapperFun = fun(Recv) -> {match, Num2, R, Recv} end,
@@ -144,12 +146,12 @@ process_function_receive(Count,[{'receive', Num, Clauses, OP, Clauses2} | T], De
   Res = process_receive(Count,RecvWrapperFun, MatchWrapperFun, Clauses, Num, Defs, FunctionName, ModuleName),
   process_function_receive(Count+1,T, Defs, FunctionName, ModuleName, lists:concat([Res, NewForm]));
 
-
 process_function_receive(Count,[{'case', Num, A, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  UpdatedArgs = process_function_receive(Count,Args, Defs, FunctionName, ModuleName, []),
+  UpdatedArgs = process_clauses_receive(Count,Args, Defs, FunctionName, ModuleName, []),
   process_function_receive(Count,T, Defs, FunctionName, ModuleName, [{'case', Num, A, UpdatedArgs} | NewForm]);
 process_function_receive(Count,[{'if', Num, Args} = _H | T], Defs, FunctionName, ModuleName, NewForm) ->
-  UpdatedArgs = process_function_receive(Count,Args, Defs, FunctionName, ModuleName, []),
+  %UpdatedArgs = process_function_receive(Count,Args, Defs, FunctionName, ModuleName, []),
+  UpdatedArgs = process_clauses_receive(Count,Args, Defs, FunctionName, ModuleName, []),
   process_function_receive(Count,T, Defs, FunctionName, ModuleName, [{'if', Num, UpdatedArgs} | NewForm]);
 process_function_receive(Count,[H | T], Defs, FunctionName, ModuleName, NewForm) ->
   process_function_receive(Count,T, Defs, FunctionName, ModuleName, [H | NewForm]).
